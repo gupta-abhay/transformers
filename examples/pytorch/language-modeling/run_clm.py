@@ -114,6 +114,12 @@ class DataTrainingArguments:
     dataset_config_name: Optional[str] = field(
         default=None, metadata={"help": "The configuration name of the dataset to use (via the datasets library)."}
     )
+    dataset_cache_dir: Optional[str] = field(
+        default=None, metadata={"help": "The directory where the dataset will be saved to/loaded from."}
+    )
+    dataset_intmd_dir: Optional[str] = field(
+        default=None, metadata={"help": "The directory where tokenized training and validation data will be saved."}
+    )
     train_file: Optional[str] = field(default=None, metadata={"help": "The input training data file (a text file)."})
     validation_file: Optional[str] = field(
         default=None,
@@ -219,6 +225,11 @@ def main():
     # Set seed before initializing model.
     set_seed(training_args.seed)
 
+    # Log tensorboards to a directory within the output_dir.
+    training_args.logging_dir = os.path.join(
+        training_args.output_dir, training_args.logging_dir
+    )
+
     # Get the datasets: you can either provide your own CSV/JSON/TXT training and evaluation files (see below)
     # or just provide the name of one of the public datasets available on the hub at https://huggingface.co/datasets/
     # (the dataset will be downloaded automatically from the datasets Hub).
@@ -230,19 +241,19 @@ def main():
     # download the dataset.
     if data_args.dataset_name is not None:
         # Downloading and loading a dataset from the hub.
-        datasets = load_dataset(data_args.dataset_name, data_args.dataset_config_name, cache_dir=model_args.cache_dir)
+        datasets = load_dataset(data_args.dataset_name, data_args.dataset_config_name, cache_dir=data_args.dataset_cache_dir)
         if "validation" not in datasets.keys():
             datasets["validation"] = load_dataset(
                 data_args.dataset_name,
                 data_args.dataset_config_name,
                 split=f"train[:{data_args.validation_split_percentage}%]",
-                cache_dir=model_args.cache_dir,
+                cache_dir=data_args.dataset_cache_dir,
             )
             datasets["train"] = load_dataset(
                 data_args.dataset_name,
                 data_args.dataset_config_name,
                 split=f"train[{data_args.validation_split_percentage}%:]",
-                cache_dir=model_args.cache_dir,
+                cache_dir=data_args.dataset_cache_dir,
             )
     else:
         data_files = {}
@@ -323,19 +334,23 @@ def main():
     tok_logger = transformers.utils.logging.get_logger("transformers.tokenization_utils_base")
 
     def tokenize_function(examples):
-        with CaptureLogger(tok_logger) as cl:
-            output = tokenizer(examples[text_column_name])
-        # clm input could be much much longer than block_size
-        if "Token indices sequence length is longer than the" in cl.out:
-            tok_logger.warning(
-                "^^^^^^^^^^^^^^^^ Please ignore the warning above - this long input will be chunked into smaller bits before being passed to the model."
-            )
-        return output
+        return tokenizer(examples[text_column_name])
 
     tokenized_datasets = datasets.map(
         tokenize_function,
         batched=True,
         num_proc=data_args.preprocessing_num_workers,
+        cache_file_names={
+            "train": os.path.join(
+                data_args.dataset_intmd_dir, "cache-train-tokenized.arrow"
+            ),
+            "validation": os.path.join(
+                data_args.dataset_intmd_dir, "cache-validation-tokenized.arrow"
+            ),
+            "test": os.path.join(
+                data_args.dataset_intmd_dir, "cache-test-tokenized.arrow"
+            )
+        },
         remove_columns=column_names,
         load_from_cache_file=not data_args.overwrite_cache,
     )
@@ -383,6 +398,17 @@ def main():
         group_texts,
         batched=True,
         num_proc=data_args.preprocessing_num_workers,
+        cache_file_names={
+            "train": os.path.join(
+                data_args.dataset_intmd_dir, "cache-train-lm.arrow"
+            ),
+            "validation": os.path.join(
+                data_args.dataset_intmd_dir, "cache-validation-lm.arrow"
+            ),
+            "test": os.path.join(
+                data_args.dataset_intmd_dir, "cache-test-lm.arrow"
+            )
+        },
         load_from_cache_file=not data_args.overwrite_cache,
     )
 

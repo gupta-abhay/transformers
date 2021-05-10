@@ -1,4 +1,4 @@
-python run_clm.py --config_name configs/gpt2_small.json --model_type gpt2 --tokenizer_name gpt2 --dataset_name wikitext --dataset_config_name wikitext-2-raw-v1 --do_train --do_eval --output_dir ./local_gpt2_testing --per_device_train_batch_size 36 --dataloader_num_workers 8 --preprocessing_num_workers 8 --overwrite_output_dir --block_size 512
+python run_clm.py --config_name configs/gpt2_small.json --model_type gpt2 --tokenizer_name gpt2 --dataset_name wikitext --dataset_cache_dir /cb/ml/language/datasets/huggingface/ --dataset_config_name wikitext-2-raw-v1 --dataset_intmd_dir /cb/ml/language/datasets/huggingface/wikitext/ --do_train --do_eval --per_device_train_batch_size 18 --gradient_accumulation_steps 2 --fp16 --dataloader_num_workers 8 --preprocessing_num_workers 8 --overwrite_output_dir --block_size 512 --evaluation_strategy steps --eval_steps 150 --save_steps 1000 --logging_dir runs --output_dir ./local_gpt2_testing_2
 
 
 

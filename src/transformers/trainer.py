@@ -1287,13 +1287,19 @@ class Trainer:
                 ):
                     # Avoid unnecessary DDP synchronization since there will be no backward pass on this example.
                     with model.no_sync():
+                        if self.args.reg_type:
+                            temp_loss, temp_reg_loss = self.training_step(model, inputs)
+                            tr_loss += temp_loss
+                            reg_loss += temp_reg_loss
+                        else:
+                            tr_loss += self.training_step(model, inputs)
+                else:
+                    if self.args.reg_type:
                         temp_loss, temp_reg_loss = self.training_step(model, inputs)
                         tr_loss += temp_loss
                         reg_loss += temp_reg_loss
-                else:
-                    temp_loss, temp_reg_loss = self.training_step(model, inputs)
-                    tr_loss += temp_loss
-                    reg_loss += temp_reg_loss
+                    else:
+                        tr_loss += self.training_step(model, inputs)
                 self.current_flos += float(self.floating_point_ops(inputs))
 
                 # Optimizer step for deepspeed must be called on every step regardless of the value of gradient_accumulation_steps
@@ -1357,13 +1363,19 @@ class Trainer:
                     self.state.epoch = epoch + (step + 1) / steps_in_epoch
                     self.control = self.callback_handler.on_step_end(args, self.state, self.control)
 
-                    self._maybe_log_save_evaluate(tr_loss, reg_loss, model, trial, epoch)
+                    if self.args.reg_type:
+                        self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, reg_loss)
+                    else:
+                        self._maybe_log_save_evaluate(tr_loss, model, trial, epoch)
 
                 if self.control.should_epoch_stop or self.control.should_training_stop:
                     break
 
             self.control = self.callback_handler.on_epoch_end(args, self.state, self.control)
-            self._maybe_log_save_evaluate(tr_loss, reg_loss, model, trial, epoch)
+            if self.args.reg_type:
+                self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, reg_loss)
+            else:
+                self._maybe_log_save_evaluate(tr_loss, model, trial, epoch)
 
             if DebugOption.TPU_METRICS_DEBUG in self.args.debug:
                 if is_torch_tpu_available():
@@ -1418,20 +1430,25 @@ class Trainer:
 
         return TrainOutput(self.state.global_step, self._total_loss_scalar / self.state.global_step, metrics)
 
-    def _maybe_log_save_evaluate(self, tr_loss, reg_loss, model, trial, epoch):
+    def _maybe_log_save_evaluate(self, tr_loss, model, trial, epoch, reg_loss=None):
         if self.control.should_log:
             logs: Dict[str, float] = {}
             tr_loss_scalar = tr_loss.item()
-            reg_loss_scalar = reg_loss.item()
             # reset tr_loss to zero
             tr_loss -= tr_loss
-            reg_loss -= reg_loss
+
+            if reg_loss:
+                reg_loss_scalar = reg_loss.item()
+                reg_loss -= reg_loss
+                logs["reg_loss"] = round(reg_loss_scalar / (self.state.global_step - self._globalstep_last_logged), 4)
 
             logs["loss"] = round(tr_loss_scalar / (self.state.global_step - self._globalstep_last_logged), 4)
-            logs["reg_loss"] = round(reg_loss_scalar / (self.state.global_step - self._globalstep_last_logged), 4)
             logs["learning_rate"] = self._get_learning_rate()
 
             self._total_loss_scalar += tr_loss_scalar
+            if reg_loss:
+                self._total_reg_loss_scalar += reg_loss_scalar
+
             self._globalstep_last_logged = self.state.global_step
 
             if self.args.rigl:
@@ -1817,8 +1834,9 @@ class Trainer:
         else:
             loss = self.compute_loss(model, inputs)
 
-        reg_term = self._get_regularization(model)
-        loss += reg_term
+        if self.args.reg_type:
+            reg_term = self._get_regularization(model)
+            loss += reg_term
 
         if self.args.n_gpu > 1:
             loss = loss.mean()  # mean() to average on multi-gpu parallel training
@@ -1838,7 +1856,9 @@ class Trainer:
         else:
             loss.backward()
 
-        return loss.detach(), reg_term.detach()
+        if self.args.reg_type:
+            return loss.detach(), reg_term.detach()
+        return loss.detach()
 
     def compute_loss(self, model, inputs, return_outputs=False):
         """

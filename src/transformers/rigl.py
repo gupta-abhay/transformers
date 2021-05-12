@@ -34,14 +34,12 @@ class Optimizer(object):
         self,
         model,
         optimizer,
-        writer,
         default_sparsity=0.3,
         mask_init_method='random',
     ):
         super(Optimizer, self).__init__()
 
         self._optimizer = optimizer
-        self._writer = writer
         self._default_sparsity = default_sparsity
         self._mask_init_method = mask_init_method
 
@@ -119,7 +117,6 @@ class SparseSETOptimizer(Optimizer):
         self,
         model,
         optimizer,
-        writer,
         begin_iteration,
         end_iteration,
         mask_distribution,
@@ -135,7 +132,6 @@ class SparseSETOptimizer(Optimizer):
         super(SparseSETOptimizer, self).__init__(
             model,
             optimizer,
-            writer,
             default_sparsity=default_sparsity,
             mask_init_method=mask_init_method,
         )
@@ -285,10 +281,6 @@ class SparseSETOptimizer(Optimizer):
     def update_topology(self):
         # update fraction
         self.update_drop_fraction()
-        if (self.global_step + 1) % 1000:
-            self._writer.add_scalar(
-                'train/drop_fraction', self._drop_fraction, self.global_step,
-            )
 
         masks = self.masks
         new_masks = []
@@ -504,7 +496,6 @@ class SparseRigLOptimizer(SparseSETOptimizer):
         self,
         model,
         optimizer,
-        writer,
         begin_iteration,
         end_iteration,
         mask_distribution='uniform',
@@ -521,7 +512,6 @@ class SparseRigLOptimizer(SparseSETOptimizer):
         super(SparseRigLOptimizer, self).__init__(
             model,
             optimizer,
-            writer,
             begin_iteration,
             end_iteration,
             mask_distribution=mask_distribution,
@@ -580,16 +570,20 @@ class SparseRigLOptimizer(SparseSETOptimizer):
         """Wraps the compute gradient of passed optimizer."""
 
         # fwd, bwd and calculate gradients
-        for i, _input in enumerate(inputs):
-            if isinstance(_input, dict):
-                outputs = self.model(**_input)
-            else:
-                outputs = self.model(*_input)
-            loss = outputs[0]
-            if self._grad_accum_steps > 1:
-                loss = loss / self._grad_accum_steps
+        # for i, _input in enumerate(inputs):
+        #     if isinstance(_input, dict):
+        #         outputs = self.model(**_input)
+        #     else:
+        #         outputs = self.model(*_input)
+        #     loss = outputs[0]
+        #     if self._grad_accum_steps > 1:
+        #         loss = loss / self._grad_accum_steps
 
-            loss.backward()
+        #     loss.backward()
+        if isinstance(inputs, dict):
+            outputs = self.model(**inputs)
+        else:
+            outputs = self.model(*input)
 
         # get gradient
         gradient = []

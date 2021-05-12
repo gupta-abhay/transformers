@@ -1451,6 +1451,7 @@ class Trainer:
 
             self._globalstep_last_logged = self.state.global_step
 
+            # verified rigl works as expected -- not plotting
             if self.args.rigl:
                 assert model is self.model, f"Model {model} should be a reference to self.model"
 

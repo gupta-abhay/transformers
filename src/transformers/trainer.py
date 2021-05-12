@@ -127,6 +127,8 @@ from .training_args import ParallelMode, TrainingArguments
 from .utils import logging
 from .utils.modeling_auto_mapping import MODEL_FOR_QUESTION_ANSWERING_MAPPING_NAMES
 
+from .rigl import SparseOptimiser, SparseRigLOptimizer
+
 
 _is_torch_generator_available = False
 _is_native_amp_available = False
@@ -804,6 +806,24 @@ class Trainer:
             else:
                 self.optimizer = optimizer_cls(optimizer_grouped_parameters, **optimizer_kwargs)
 
+            if self.args.rigl:
+                sparse_opt = SparseRigLOptimizer(
+                    self.model,
+                    self.optimizer,
+                    begin_iteration=self.args.rigl_begin_iteration,
+                    end_iteration=self.args.rigl_end_iteration,
+                    mask_distribution=self.args.rigl_mask_distribution,
+                    mask_init_method=self.args.rigl_mask_init_method,
+                    erk_power_scale=self.args.rigl_erk_power_scale,
+                    frequency=self.args.rigl_growth_frequency,
+                    default_sparsity=self.args.pruning_ratio,
+                    drop_fraction=self.args.rigl_drop_fraction,
+                    drop_fraction_anneal=self.args.rigl_drop_fraction_anneal,
+                )
+                self.optimizer = SparseOptimiser(
+                    sparse_opt, lr=self.args.learning_rate
+                )
+
         if is_sagemaker_mp_enabled():
             self.optimizer = smp.DistributedOptimizer(self.optimizer)
 
@@ -821,12 +841,20 @@ class Trainer:
                 else math.ceil(num_training_steps * self.args.warmup_ratio)
             )
 
-            self.lr_scheduler = get_scheduler(
-                self.args.lr_scheduler_type,
-                self.optimizer,
-                num_warmup_steps=warmup_steps,
-                num_training_steps=num_training_steps,
-            )
+            if args.rigl:
+                self.lr_scheduler = get_scheduler(
+                    self.args.lr_scheduler_type,
+                    self.optimizer._opt,
+                    num_warmup_steps=warmup_steps,
+                    num_training_steps=num_training_steps,
+                )
+            else:
+                self.lr_scheduler = get_scheduler(
+                    self.args.lr_scheduler_type,
+                    self.optimizer,
+                    num_warmup_steps=warmup_steps,
+                    num_training_steps=num_training_steps,
+                )
 
     def num_examples(self, dataloader: DataLoader) -> int:
         """
@@ -1123,6 +1151,8 @@ class Trainer:
 
         # Check if saved optimizer or scheduler states exist
         self._load_optimizer_and_scheduler(resume_from_checkpoint)
+        if self.args.rigl:
+            self.optimizer._sparse_opt.apply_masks()
 
         # important: at this point:
         # self.model         is the Transformers Model
@@ -1298,12 +1328,20 @@ class Trainer:
                         xm.optimizer_step(self.optimizer)
                     elif self.use_amp:
                         scale_before = self.scaler.get_scale()
-                        self.scaler.step(self.optimizer)
+                        # rigl scale update
+                        if self.args.rigl:
+                            self.scaler.step(self.optimizer, inputs=self._prepare_inputs(inputs), lr_scheduler=self.lr_scheduler)
+                        else:
+                            self.scaler.step(self.optimizer)
+
                         self.scaler.update()
                         scale_after = self.scaler.get_scale()
                         optimizer_was_run = scale_before <= scale_after
                     else:
-                        self.optimizer.step()
+                        if self.args.rigl:
+                            self.optimizer.step(inputs=self._prepare_inputs(inputs), lr_scheduler=self.lr_scheduler)
+                        else:
+                            self.optimizer.step()
 
                     if optimizer_was_run and not self.deepspeed:
                         self.lr_scheduler.step()
@@ -1385,6 +1423,15 @@ class Trainer:
 
             self._total_loss_scalar += tr_loss_scalar
             self._globalstep_last_logged = self.state.global_step
+
+            if self.args.rigl:
+                assert model is self.model, f"Model {model} should be a reference to self.model"
+
+                for name, module in self.model.named_modules():
+                    if hasattr(module, "weight"):
+                        logs[f"sparsity_{name}.weight"] = (
+                            (module.weight == 0).float().mean().item()
+                        )
 
             self.log(logs)
 

@@ -61,6 +61,14 @@ def default_logdir() -> str:
     return os.path.join("runs", current_time + "_" + socket.gethostname())
 
 
+def validate_sparsity_args(args):
+    """
+    Ensure that any RigL arguments in `args` satisfy certain sanity checks.
+    """
+    if args.rigl_begin_iteration > args.rigl_end_iteration:
+        raise ValueError('Begin iteration greater than end iteration for RigL')
+
+
 @dataclass
 class TrainingArguments:
     """
@@ -564,6 +572,58 @@ class TrainingArguments:
         metadata={"help": "Used by the SageMaker launcher to send mp-specific args. Ignored in Trainer"},
     )
 
+    # Sparsity parameters, as in run_pretraining.py for BERT
+    rigl: bool = field(
+        default=False,
+        metadata={"help": "enable RigL training"},
+    )
+    rigl_begin_iteration: int = field(
+        default=0,
+        metadata={"help": "start iteration of rigl"},
+    )
+    rigl_end_iteration: int = field(
+        default=96000,
+        metadata={"help": "end iteration of rigl"},
+    )
+    rigl_mask_distribution: str = field(
+        default="erk",
+        metadata={"help": "sparsity distribution of rigl"},
+    )
+    rigl_mask_init_method: str = field(
+        default="random",
+        metadata={"help": "mask init for rigl"},
+    )
+    rigl_erk_power_scale: float = field(
+        default=1.0,
+        metadata={"help": "power scale for softer / harder erk"},
+    )
+    pruning_ratio: float = field(
+        default=0.5,
+        metadata={"help": "sparsity ratio for training"},
+    )
+    rigl_growth_frequency: int = field(
+        default=500,
+        metadata={"help": "number of iterations for regrowth"},
+    )
+    rigl_drop_fraction: float = field(
+        default=0.3,
+        metadata={"help": "drop fraction of existing weights"},
+    )
+    rigl_drop_fraction_anneal: str = field(
+        default="cosine",
+        metadata={"help": "annealer to use for drop fraction"},
+    )
+
+    # regularization parameters
+    reg_decay: float = field(
+        default=0.001,
+        metadata={"help": "the value of regularization to use"}
+    )
+    reg_type: str = field(
+        default="",
+        metadata={"help": "the type of regularization to use"}
+    )
+
     def __post_init__(self):
         # Handle --use_env option in torch.distributed.launch (local_rank not passed as an arg then).
         # This needs to happen before any call to self.device or self.n_gpu.
@@ -666,6 +726,8 @@ class TrainingArguments:
 
             # will be used later by the Trainer (leave self.deepspeed unmodified in case a user relies on it not to be modified)
             self.deepspeed_config_hf = DeepSpeedConfigHF(self)
+
+        validate_sparsity_args(self)
 
     def __repr__(self):
         # We override the default repr to remove deprecated arguments from the repr. This method should be removed once

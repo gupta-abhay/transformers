@@ -345,7 +345,7 @@ def main():
         ),
     }
 
-    if "test" in dataset.keys():
+    if "test" in datasets.keys():
         _cache_file_names_tknzd["test"] = os.path.join(
             data_args.dataset_intmd_dir, "cache-test-tokenized.arrow"
         )
@@ -406,7 +406,7 @@ def main():
             data_args.dataset_intmd_dir, "cache-validation-lm.arrow"
         ),
     }
-    if "test" in dataset.keys():
+    if "test" in datasets.keys():
         _cache_file_names_lm["test"] = os.path.join(
             data_args.dataset_intmd_dir, "cache-test-lm.arrow"
         )

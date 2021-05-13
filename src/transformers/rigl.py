@@ -14,6 +14,7 @@ from .rigl_utils import (
 )
 # from .rigl_sparsity_utils import get_model_complexity_info  # noqa
 import pdb, sys  # noqa
+from packaging import version
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -548,9 +549,9 @@ class SparseRigLOptimizer(SparseSETOptimizer):
         for param_group in self._optimizer.param_groups:
             param_group['lr'] = (
                 # backward compatibility for pytorch schedulers
-                self.lr_scheduler.get_last_lr()[0]
+                lr_scheduler.get_last_lr()[0]
                 if version.parse(torch.__version__) >= version.parse("1.4")
-                else self.lr_scheduler.get_lr()[0]
+                else lr_scheduler.get_lr()[0]
             )
 
         # update parameters
@@ -575,20 +576,12 @@ class SparseRigLOptimizer(SparseSETOptimizer):
         """Wraps the compute gradient of passed optimizer."""
 
         # fwd, bwd and calculate gradients
-        # for i, _input in enumerate(inputs):
-        #     if isinstance(_input, dict):
-        #         outputs = self.model(**_input)
-        #     else:
-        #         outputs = self.model(*_input)
-        #     loss = outputs[0]
-        #     if self._grad_accum_steps > 1:
-        #         loss = loss / self._grad_accum_steps
-
-        #     loss.backward()
-        if isinstance(inputs, dict):
-            outputs = self.model(**inputs)
-        else:
-            outputs = self.model(*input)
+        for i, _input in enumerate(inputs):
+            outputs = self.model(**_input)
+            loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
+            if self._grad_accum_steps > 1:
+                loss = loss / self._grad_accum_steps
+            loss.backward()
 
         # get gradient
         gradient = []

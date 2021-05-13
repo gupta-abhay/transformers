@@ -819,6 +819,7 @@ class Trainer:
                     default_sparsity=self.args.pruning_ratio,
                     drop_fraction=self.args.rigl_drop_fraction,
                     drop_fraction_anneal=self.args.rigl_drop_fraction_anneal,
+                    grad_accum_steps=self.args.gradient_accumulation_steps,
                 )
                 self.optimizer = SparseOptimiser(
                     sparse_opt, lr=self.args.learning_rate
@@ -1263,6 +1264,7 @@ class Trainer:
             )
             self.control = self.callback_handler.on_epoch_begin(args, self.state, self.control)
 
+            rigl_input_list = []
             for step, inputs in enumerate(epoch_iterator):
 
                 # Skip past any already trained steps if resuming training
@@ -1301,6 +1303,7 @@ class Trainer:
                     else:
                         tr_loss += self.training_step(model, inputs)
                 self.current_flos += float(self.floating_point_ops(inputs))
+                rigl_input_list.append(self._prepare_inputs(inputs))
 
                 # Optimizer step for deepspeed must be called on every step regardless of the value of gradient_accumulation_steps
                 if self.deepspeed:
@@ -1342,7 +1345,7 @@ class Trainer:
                         scale_before = self.scaler.get_scale()
                         # rigl scale update
                         if self.args.rigl:
-                            self.scaler.step(self.optimizer, inputs=self._prepare_inputs(inputs), lr_scheduler=self.lr_scheduler)
+                            self.scaler.step(self.optimizer, inputs=rigl_input_list, lr_scheduler=self.lr_scheduler)
                         else:
                             self.scaler.step(self.optimizer)
 
@@ -1351,7 +1354,7 @@ class Trainer:
                         optimizer_was_run = scale_before <= scale_after
                     else:
                         if self.args.rigl:
-                            self.optimizer.step(inputs=self._prepare_inputs(inputs), lr_scheduler=self.lr_scheduler)
+                            self.optimizer.step(inputs=rigl_input_list, lr_scheduler=self.lr_scheduler)
                         else:
                             self.optimizer.step()
 
@@ -1367,6 +1370,7 @@ class Trainer:
                         self._maybe_log_save_evaluate(tr_loss, model, trial, epoch, reg_loss)
                     else:
                         self._maybe_log_save_evaluate(tr_loss, model, trial, epoch)
+                    rigl_input_list = []
 
                 if self.control.should_epoch_stop or self.control.should_training_stop:
                     break
@@ -1758,20 +1762,6 @@ class Trainer:
         for k, v in inputs.items():
             if isinstance(v, torch.Tensor):
                 inputs[k] = v.to(self.args.device)
-
-        if self.args.past_index >= 0 and self._past is not None:
-            inputs["mems"] = self._past
-
-        return inputs
-
-    def _prepare_cpu_inputs(self, inputs: Dict[str, Union[torch.Tensor, Any]]) -> Dict[str, Union[torch.Tensor, Any]]:
-        """
-        Prepare :obj:`inputs` before feeding them to the model, converting them to tensors if they are not already and
-        handling potential state.
-        """
-        for k, v in inputs.items():
-            if isinstance(v, torch.Tensor):
-                inputs[k] = v.to('cpu')
 
         if self.args.past_index >= 0 and self._past is not None:
             inputs["mems"] = self._past

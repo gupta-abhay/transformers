@@ -820,6 +820,8 @@ class Trainer:
                     drop_fraction=self.args.rigl_drop_fraction,
                     drop_fraction_anneal=self.args.rigl_drop_fraction_anneal,
                     grad_accum_steps=self.args.gradient_accumulation_steps,
+                    use_amp=self.use_amp,
+                    scaler=self.scaler,
                 )
                 self.optimizer = SparseOptimiser(
                     sparse_opt, lr=self.args.learning_rate

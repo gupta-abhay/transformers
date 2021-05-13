@@ -18,6 +18,11 @@ from packaging import version
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+if version.parse(torch.__version__) >= version.parse("1.6"):
+    _is_torch_generator_available = True
+    _is_native_amp_available = True
+    from torch.cuda.amp import autocast
+
 
 class Optimizer(object):
     """Implementation of optimizer.
@@ -509,6 +514,8 @@ class SparseRigLOptimizer(SparseSETOptimizer):
         grow_init='zeros',
         initial_acc_scale=0.0,
         grad_accum_steps=1,
+        use_amp=False,
+        scaler=None,
     ):
         super(SparseRigLOptimizer, self).__init__(
             model,
@@ -530,6 +537,8 @@ class SparseRigLOptimizer(SparseSETOptimizer):
         self.redensify = False
         self.grad_dict = None
         self.prev_iteration = None
+        self.use_amp = use_amp
+        self.scaler = scaler
 
     def state_dict(self):
         return {
@@ -577,18 +586,30 @@ class SparseRigLOptimizer(SparseSETOptimizer):
 
         # fwd, bwd and calculate gradients
         for i, _input in enumerate(inputs):
-            outputs = self.model(**_input)
-            loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
+            if self.use_amp:
+                with autocast():
+                    loss = self.compute_loss(self.model, _input)
+            else:
+                loss = self.compute_loss(self.model, _input)
+
             if self._grad_accum_steps > 1:
                 loss = loss / self._grad_accum_steps
-            loss.backward()
+
+            if self.use_amp:
+                self.scaler.scale(loss).backward()
+            else:
+                loss.backward()
 
         # get gradient
         gradient = []
         for layer in self.layers:
             gradient.append(layer.weight.grad.data)
-
         self.grad_dict = dict(zip(self.layers, gradient))
+
+    def compute_loss(self, model, inputs):
+        outputs = model(**inputs)
+        loss = outputs["loss"] if isinstance(outputs, dict) else outputs[0]
+        return loss
 
     def update_layer_mask(
         self, layer, layer_mask, noise_std=1e-5, grow_noise_std=1e-6

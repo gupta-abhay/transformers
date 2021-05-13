@@ -546,7 +546,12 @@ class SparseRigLOptimizer(SparseSETOptimizer):
             "you need to apply the masks after initializaing and loading!"
         )
         for param_group in self._optimizer.param_groups:
-            param_group['lr'] = lr_scheduler.get_last_lr()[0]
+            param_group['lr'] = (
+                # backward compatibility for pytorch schedulers
+                self.lr_scheduler.get_last_lr()[0]
+                if version.parse(torch.__version__) >= version.parse("1.4")
+                else self.lr_scheduler.get_lr()[0]
+            )
 
         # update parameters
         self._optimizer.step()

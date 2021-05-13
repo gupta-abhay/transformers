@@ -336,21 +336,25 @@ def main():
     def tokenize_function(examples):
         return tokenizer(examples[text_column_name])
 
+    _cache_file_names_tknzd = {
+        "train": os.path.join(
+            data_args.dataset_intmd_dir, "cache-train-tokenized.arrow"
+        ),
+        "validation": os.path.join(
+            data_args.dataset_intmd_dir, "cache-validation-tokenized.arrow"
+        ),
+    }
+
+    if "test" in dataset.keys():
+        _cache_file_names_tknzd["test"] = os.path.join(
+            data_args.dataset_intmd_dir, "cache-test-tokenized.arrow"
+        )
+
     tokenized_datasets = datasets.map(
         tokenize_function,
         batched=True,
         num_proc=data_args.preprocessing_num_workers,
-        cache_file_names={
-            "train": os.path.join(
-                data_args.dataset_intmd_dir, "cache-train-tokenized.arrow"
-            ),
-            "validation": os.path.join(
-                data_args.dataset_intmd_dir, "cache-validation-tokenized.arrow"
-            ),
-            "test": os.path.join(
-                data_args.dataset_intmd_dir, "cache-test-tokenized.arrow"
-            )
-        },
+        cache_file_names=_cache_file_names_tknzd,
         remove_columns=column_names,
         load_from_cache_file=not data_args.overwrite_cache,
     )
@@ -394,21 +398,24 @@ def main():
     # To speed up this part, we use multiprocessing. See the documentation of the map method for more information:
     # https://huggingface.co/docs/datasets/package_reference/main_classes.html#datasets.Dataset.map
 
+    _cache_file_names_lm = {
+        "train": os.path.join(
+            data_args.dataset_intmd_dir, "cache-train-lm.arrow"
+        ),
+        "validation": os.path.join(
+            data_args.dataset_intmd_dir, "cache-validation-lm.arrow"
+        ),
+    }
+    if "test" in dataset.keys():
+        _cache_file_names_lm["test"] = os.path.join(
+            data_args.dataset_intmd_dir, "cache-test-lm.arrow"
+        )
+
     lm_datasets = tokenized_datasets.map(
         group_texts,
         batched=True,
         num_proc=data_args.preprocessing_num_workers,
-        cache_file_names={
-            "train": os.path.join(
-                data_args.dataset_intmd_dir, "cache-train-lm.arrow"
-            ),
-            "validation": os.path.join(
-                data_args.dataset_intmd_dir, "cache-validation-lm.arrow"
-            ),
-            "test": os.path.join(
-                data_args.dataset_intmd_dir, "cache-test-lm.arrow"
-            )
-        },
+        cache_file_names=_cache_file_names_lm,
         load_from_cache_file=not data_args.overwrite_cache,
     )
 

@@ -6,7 +6,7 @@ python run_clm.py --config_name configs/gpt2_small.json --model_type gpt2 --toke
 
 
 
-python run_clm.py --config_name configs/gpt2_small.json --model_type gpt2 --tokenizer_name gpt2 --dataset_name openwebtext --dataset_cache_dir /cb/home/abhay/ws/datasets/huggingface/ --dataset_intmd_dir /cb/home/abhay/ws/datasets/huggingface/openwebtext/cache_dir --do_train --do_eval --per_device_train_batch_size 9 --gradient_accumulation_steps 4 --fp16 --dataloader_num_workers 8 --preprocessing_num_workers 8 --overwrite_output_dir --block_size 512 --evaluation_strategy steps --eval_steps 1000 --save_steps 1000 --logging_dir runs --learning_rate 2.8e-4 --max_grad_norm 0.0 --lr_scheduler_type constant --adam_epsilon 1e-6 --output_dir ./gpt2_small --save_total_limit 2 --logging_strategy steps --logging_steps 500
+python run_clm.py --config_name configs/gpt2_small.json --model_type gpt2 --tokenizer_name gpt2 --dataset_name openwebtext --dataset_cache_dir /cb/home/abhay/ws/datasets/huggingface/ --dataset_intmd_dir /cb/home/abhay/ws/datasets/huggingface/openwebtext/ --do_train --do_eval --per_device_train_batch_size 9 --gradient_accumulation_steps 4 --fp16 --dataloader_num_workers 8 --preprocessing_num_workers 8 --overwrite_output_dir --block_size 512 --evaluation_strategy steps --eval_steps 1000 --save_steps 1000 --logging_dir runs --learning_rate 2.8e-4 --max_grad_norm 0.0 --lr_scheduler_type constant --adam_epsilon 1e-6 --output_dir ./gpt2_small --save_total_limit 2 --logging_strategy steps --logging_steps 500
 
 
 # rigl w/ wikitext
